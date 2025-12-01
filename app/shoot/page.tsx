@@ -25,7 +25,7 @@ export default function ShootPage() {
   };
 
   return (
-    <main className="min-h-dvh bg-zinc-950 text-white py-6">
+    <main className="min-h-dvh bg-zinc-950 text-white px-2 py-6">
       <div className="mx-auto flex w-full max-w-md flex-col gap-6">
         <header className="flex items-center justify-between">
           <div className="flex flex-col">
@@ -49,23 +49,9 @@ export default function ShootPage() {
         </p>
 
         <section className="flex flex-col gap-3">
-          <h2 className="text-xs font-medium text-zinc-300">
-            선택된 프레임 미리보기
-          </h2>
-          <div className="h-120 flex items-center justify-center">
-            <FramePreview
-              variant={selectedFrameId}
-              selected
-              className="w-full"
-            />
-          </div>
-        </section>
+          <h2 className="text-xs font-medium text-zinc-300">프레임 선택</h2>
 
-        <section className="flex flex-col gap-2">
-          <h3 className="text-xs font-medium text-zinc-300 mb-1">
-            프레임 선택
-          </h3>
-          <div className="flex flex-col gap-2">
+          <div className="grid grid-cols-2 gap-4">
             {FRAME_CONFIGS.map((frame) => {
               const isSelected = frame.id === selectedFrameId;
               return (
@@ -74,44 +60,39 @@ export default function ShootPage() {
                   type="button"
                   onClick={() => setSelectedFrameId(frame.id)}
                   className={[
-                    "flex items-center justify-between rounded-2xl border px-3 py-2 text-left transition-colors",
-                    "bg-zinc-900/70",
+                    "flex flex-col items-center gap-2 rounded-2xl px-3 py-3 transition-colors",
                     isSelected
-                      ? "border-emerald-400/80"
-                      : "border-zinc-800 hover:border-zinc-600",
+                      ? "bg-zinc-900 border border-emerald-400/80"
+                      : "bg-zinc-900/60 border border-zinc-800 hover:border-zinc-600",
                   ].join(" ")}
                 >
-                  <div className="flex-1 pr-3">
-                    <p className="text-[11px] font-medium text-zinc-100">
-                      {frame.name}
-                    </p>
-                    <p className="text-[10px] text-zinc-500">
-                      {frame.description}
-                    </p>
+                  <span className="text-[11px] font-medium text-zinc-100">
+                    {frame.name}
+                  </span>
+                  <div className="flex h-[200px] w-full items-center justify-center">
+                    <FramePreview
+                      variant={frame.id}
+                      // selected={isSelected}
+                      className=""
+                    />
                   </div>
-                  <div
-                    className={[
-                      "flex h-6 w-6 items-center justify-center rounded-full border text-[10px]",
-                      isSelected
-                        ? "border-emerald-400 bg-emerald-500 text-zinc-950"
-                        : "border-zinc-600 text-zinc-400",
-                    ].join(" ")}
-                  ></div>
                 </button>
               );
             })}
           </div>
         </section>
 
-        <div className="mt-2 flex justify-end">
-          <button
-            type="button"
-            onClick={handleConfirmFrame}
-            className="rounded-full bg-emerald-500 px-4 py-2 text-xs font-semibold text-zinc-950 hover:bg-emerald-400"
-          >
-            이 프레임으로 촬영하기
-          </button>
-        </div>
+        <section className="mt-2 flex flex-col gap-3">
+          <div className="flex justify-end">
+            <button
+              type="button"
+              onClick={handleConfirmFrame}
+              className="rounded-full bg-emerald-500 px-4 py-2 text-xs font-semibold text-zinc-950 hover:bg-emerald-400"
+            >
+              이 프레임으로 촬영하기
+            </button>
+          </div>
+        </section>
       </div>
     </main>
   );
