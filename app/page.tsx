@@ -35,19 +35,27 @@ export default function LandingPage() {
                 인생네컷 만들기 시작하기
               </Link>
 
-              {/* <div className="flex flex-col gap-2 text-[10px] text-zinc-500 md:text-xs">
+              <div className="flex flex-col gap-2 text-[10px] text-zinc-500 md:text-xs">
                 <div className="flex items-center gap-2">
                   <span className="h-px flex-1 bg-zinc-700" />
-                  <span>곧 소셜 로그인도 지원할게요</span>
+                  <span>어디서든 오늘의 기록을 이어서 보고 싶다면</span>
                   <span className="h-px flex-1 bg-zinc-700" />
                 </div>
-                <button
-                  type="button"
-                  className="w-full rounded-full border border-zinc-700 bg-transparent py-2 text-[10px] text-zinc-400 cursor-not-allowed md:py-2.5"
-                >
-                  Google로 로그인
-                </button>
-              </div> */}
+                <div className="flex gap-2">
+                  <Link
+                    href="/login"
+                    className="flex-1 rounded-full border border-zinc-700 bg-zinc-900/40 py-2 text-center text-[11px] text-zinc-200 hover:bg-zinc-800 md:py-2.5"
+                  >
+                    로그인
+                  </Link>
+                  <Link
+                    href="/signup"
+                    className="flex-1 rounded-full border border-emerald-500/80 bg-emerald-500/10 py-2 text-center text-[11px] text-emerald-300 hover:bg-emerald-500/20 md:py-2.5"
+                  >
+                    회원가입
+                  </Link>
+                </div>
+              </div>
             </div>
           </div>
 
