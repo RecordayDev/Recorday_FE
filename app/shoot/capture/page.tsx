@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useShootSession } from "@/lib/shootSessionStore";
@@ -19,6 +19,7 @@ export default function CapturePage() {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const streamRef = useRef<MediaStream | null>(null);
+  const shutterAudioRef = useRef<HTMLAudioElement | null>(null);
 
   const remainingShots = Math.max(0, MAX_SHOTS - shots.length);
 
@@ -58,7 +59,14 @@ export default function CapturePage() {
     };
   }, []);
 
-  const capturePhoto = () => {
+  const playShutterSound = () => {
+    const audio = shutterAudioRef.current;
+    if (!audio) return;
+    audio.currentTime = 0;
+    audio.play().catch(() => {});
+  };
+
+  const capturePhoto = useCallback(() => {
     if (!videoRef.current || !canvasRef.current) return;
     const video = videoRef.current;
     const canvas = canvasRef.current;
@@ -70,10 +78,29 @@ export default function CapturePage() {
     canvas.width = width;
     canvas.height = height;
 
+    ctx.save();
+    ctx.translate(width, 0);
+    ctx.scale(-1, 1);
     ctx.drawImage(video, 0, 0, width, height);
+    ctx.restore();
+
     const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
     addShot(dataUrl);
-  };
+
+    playShutterSound();
+  }, [addShot]);
+
+  const finishOrContinue = useCallback(() => {
+    const taken = shots.length + 1;
+
+    if (taken >= MAX_SHOTS) {
+      setIsShooting(false);
+      setCountdown(null);
+      router.push("/shoot/select");
+    } else {
+      setCountdown(MAX_COUNT);
+    }
+  }, [shots.length, router]);
 
   const startShooting = () => {
     if (!isCameraReady) {
@@ -92,25 +119,29 @@ export default function CapturePage() {
     const timer = window.setTimeout(() => {
       if (countdown <= 1) {
         capturePhoto();
-        const taken = shots.length + 1;
-
-        if (taken >= MAX_SHOTS) {
-          setIsShooting(false);
-          setCountdown(null);
-          router.push("/shoot/select");
-        } else {
-          setCountdown(MAX_COUNT);
-        }
+        finishOrContinue();
       } else {
         setCountdown(countdown - 1);
       }
     }, 1000);
 
     return () => window.clearTimeout(timer);
-  }, [isShooting, countdown, shots.length, router]);
+  }, [isShooting, countdown, capturePhoto, finishOrContinue]);
+
+  const handleShootNow = () => {
+    if (!isShooting || !isCameraReady) return;
+    capturePhoto();
+    finishOrContinue();
+  };
 
   return (
     <main className="min-h-dvh bg-zinc-950 text-white px-4 py-6">
+      <audio
+        ref={shutterAudioRef}
+        src="/shutter.mp3"
+        preload="auto"
+        className="hidden"
+      />
       <div className="mx-auto flex w-full max-w-md flex-col gap-5">
         <header className="flex items-center justify-between">
           <div className="flex flex-col">
@@ -143,13 +174,13 @@ export default function CapturePage() {
               autoPlay
               playsInline
               muted
-              className="h-full w-full object-contain"
+              className="h-full w-full object-contain scale-x-[-1]"
             />
             <canvas ref={canvasRef} className="hidden" />
 
             {isShooting && countdown !== null && (
-              <div className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center bg-black/40">
-                <div className="flex flex-col items-center gap-2">
+              <div className="absolute inset-0 flex flex-col items-center justify-center bg-black/40">
+                <div className="pointer-events-auto flex flex-col items-center gap-2">
                   <div className="flex h-16 w-16 items-center justify-center rounded-full border border-emerald-400 text-2xl font-semibold">
                     {countdown}
                   </div>
@@ -159,6 +190,13 @@ export default function CapturePage() {
                   <span className="text-[11px] text-zinc-400">
                     남은 사진 {remainingShots}장
                   </span>
+                  <button
+                    type="button"
+                    onClick={handleShootNow}
+                    className="mt-2 rounded-full bg-emerald-500 px-3 py-1 text-[11px] font-semibold text-zinc-950 hover:bg-emerald-400"
+                  >
+                    지금 촬영
+                  </button>
                 </div>
               </div>
             )}
