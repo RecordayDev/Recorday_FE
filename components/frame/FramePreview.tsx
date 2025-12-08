@@ -1,10 +1,16 @@
 import type { FrameId } from "@/constants/frames";
 
+export type FrameMedia = {
+  type: "image" | "video";
+  src: string;
+};
+
 type FramePreviewProps = {
   variant: FrameId;
   // selected?: boolean;
   className?: string;
-  images?: string[];
+  media?: (FrameMedia | null)[];
+  images?: (string | null)[];
   borderColor?: string;
 };
 
@@ -128,6 +134,7 @@ export function FramePreview({
   variant,
   // selected,
   className = "",
+  media,
   images,
   borderColor,
 }: FramePreviewProps) {
@@ -160,7 +167,6 @@ export function FramePreview({
         const topPct = (slot.y / totalHeight) * 100;
         const widthPct = (slot.width / totalWidth) * 100;
         const heightPct = (slot.height / totalHeight) * 100;
-        const imageSrc = images?.[idx];
 
         const baseStyle: React.CSSProperties = {
           left: `${leftPct}%`,
@@ -169,12 +175,31 @@ export function FramePreview({
           height: `${heightPct}%`,
         };
 
-        if (imageSrc) {
-          // 슬롯 안에 선택된 이미지가 있을 때
+        const mediaItem: FrameMedia | null =
+          media?.[idx] ??
+          (images && images[idx]
+            ? { type: "image", src: images[idx] as string }
+            : null);
+
+        if (mediaItem) {
+          if (mediaItem.type === "video") {
+            return (
+              <video
+                key={idx}
+                src={mediaItem.src}
+                className="absolute rounded-md object-cover"
+                style={baseStyle}
+                autoPlay
+                loop
+                muted
+                playsInline
+              />
+            );
+          }
           return (
             <img
               key={idx}
-              src={imageSrc}
+              src={mediaItem.src}
               alt={`frame-slot-${idx + 1}`}
               className="absolute rounded-md object-cover"
               style={baseStyle}
