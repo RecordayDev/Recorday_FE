@@ -3,13 +3,21 @@
 import { create } from "zustand";
 import type { FrameId } from "@/constants/frames";
 
+const MAX_SELECT = 4;
+
+export type ShotItem = {
+  photo: string;
+  video?: string;
+};
+
 type ShootSessionState = {
   frameId: FrameId | null;
-  shots: string[];
-  selectedIndexes: number[];
+  shots: ShotItem[];
+  selectedIndexes: (number | null)[];
 
   setFrameId: (id: FrameId) => void;
-  addShot: (dataUrl: string) => void;
+  addShotPhoto: (dataUrl: string) => void;
+  attachVideoToShot: (videoUrl: string) => void;
   resetShots: () => void;
   toggleSelect: (index: number) => void;
   setSelectedIndexes: (indexes: number[]) => void;
@@ -19,24 +27,55 @@ type ShootSessionState = {
 export const useShootSession = create<ShootSessionState>((set) => ({
   frameId: null,
   shots: [],
-  selectedIndexes: [],
+  selectedIndexes: Array(MAX_SELECT).fill(null),
 
   setFrameId: (id) => set({ frameId: id }),
-  addShot: (dataUrl) => set((state) => ({ shots: [...state.shots, dataUrl] })),
-  resetShots: () => set({ shots: [], selectedIndexes: [] }),
+
+  addShotPhoto: (dataUrl) =>
+    set((state) => ({
+      shots: [...state.shots, { photo: dataUrl }],
+    })),
+
+  attachVideoToShot: (videoUrl) =>
+    set((state) => {
+      const next = [...state.shots];
+      const idx = next.findIndex((shot) => !shot.video);
+      if (idx === -1) return state;
+      next[idx] = { ...next[idx], video: videoUrl };
+      return { shots: next };
+    }),
+
+  resetShots: () =>
+    set({
+      shots: [],
+      selectedIndexes: Array(MAX_SELECT).fill(null),
+    }),
+
   toggleSelect: (index) =>
     set((state) => {
-      const exists = state.selectedIndexes.includes(index);
-      if (exists) {
-        return {
-          selectedIndexes: state.selectedIndexes.filter((i) => i !== index),
-        };
+      const { selectedIndexes } = state;
+
+      const existingSlot = selectedIndexes.indexOf(index);
+      if (existingSlot !== -1) {
+        const next = [...selectedIndexes];
+        next[existingSlot] = null;
+        return { selectedIndexes: next };
       }
-      if (state.selectedIndexes.length >= 4) {
-        return state;
-      }
-      return { selectedIndexes: [...state.selectedIndexes, index] };
+
+      const emptySlot = selectedIndexes.indexOf(null);
+      if (emptySlot === -1) return state;
+
+      const next = [...selectedIndexes];
+      next[emptySlot] = index;
+      return { selectedIndexes: next };
     }),
+
   setSelectedIndexes: (indexes) => set({ selectedIndexes: indexes }),
-  resetAll: () => set({ frameId: null, shots: [], selectedIndexes: [] }),
+
+  resetAll: () =>
+    set({
+      frameId: null,
+      shots: [],
+      selectedIndexes: Array(MAX_SELECT).fill(null),
+    }),
 }));

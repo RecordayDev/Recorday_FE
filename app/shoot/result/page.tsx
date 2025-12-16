@@ -5,7 +5,11 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useShootSession } from "@/lib/shootSessionStore";
 import { FRAME_CONFIGS, type FrameId } from "@/constants/frames";
-import { FramePreview, FRAME_LAYOUTS } from "@/components/frame/FramePreview";
+import {
+  FramePreview,
+  FRAME_LAYOUTS,
+  type FrameMedia,
+} from "@/components/frame/FramePreview";
 
 const BORDER_COLORS = [
   { id: "black", label: "블랙", value: "#000000" },
@@ -14,14 +18,22 @@ const BORDER_COLORS = [
   { id: "pink", label: "핑크", value: "#f973b6" },
   { id: "blue", label: "블루", value: "#38bdf8" },
 ] as const;
-
+const MAX_SECONDS = 8;
 export default function ResultPage() {
   const router = useRouter();
   const { frameId, shots, selectedIndexes } = useShootSession();
 
   const [borderColor, setBorderColor] = useState<string>("#18181b");
-  const [isDownloading, setIsDownloading] = useState(false);
+  const [isDownloadingImage, setIsDownloadingImage] = useState(false);
+  const [isDownloadingVideo, setIsDownloadingVideo] = useState(false);
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const targetDuration = MAX_SECONDS;
+
+  // 선택 개수
+  const selectedCount = useMemo(
+    () => selectedIndexes.filter((i) => i != null).length,
+    [selectedIndexes]
+  );
 
   useEffect(() => {
     if (!frameId) {
@@ -32,39 +44,63 @@ export default function ResultPage() {
       router.replace("/shoot/capture");
       return;
     }
-    if (selectedIndexes.length !== 4) {
+    if (selectedCount !== 4) {
       router.replace("/shoot/select");
       return;
     }
-  }, [frameId, shots.length, selectedIndexes.length, router]);
+  }, [frameId, shots.length, selectedCount, router]);
+
+  // 슬롯에 들어갈 media (선택 순서 그대로)
+  const slotMedia: (FrameMedia | null)[] = useMemo(
+    () =>
+      selectedIndexes.map((idx) => {
+        if (idx == null) return null;
+        const shot = shots[idx];
+        if (!shot) return null;
+
+        if (shot.video) {
+          return { type: "video", src: shot.video };
+        }
+        return { type: "image", src: shot.photo };
+      }),
+    [selectedIndexes, shots]
+  );
+
+  // PNG 합성을 위한 "사진만" 배열 (선택 순서 그대로)
+  const selectedPhotosForFrame: string[] = useMemo(
+    () =>
+      selectedIndexes
+        .map((idx) => (idx == null ? null : shots[idx]?.photo ?? null))
+        .filter((p): p is string => Boolean(p))
+        .slice(0, 4),
+    [selectedIndexes, shots]
+  );
+
+  // 영상 합성용: 선택된 4칸 모두에 video가 있는지
+  const hasAllVideos = useMemo(
+    () =>
+      selectedIndexes.every((idx) => {
+        if (idx == null) return false;
+        return Boolean(shots[idx]?.video);
+      }),
+    [selectedIndexes, shots]
+  );
+
+  if (!frameId) return null;
 
   const frameConfig = FRAME_CONFIGS.find((f) => f.id === frameId);
-
-  const selectedImagesForFrame = useMemo(() => {
-    if (!selectedIndexes.length) return [];
-    return selectedIndexes
-      .map((idx) => shots[idx])
-      .filter((src): src is string => Boolean(src))
-      .slice(0, 4);
-  }, [selectedIndexes, shots]);
-
-  if (!frameId) {
-    return null;
-  }
-
   const layout = FRAME_LAYOUTS[frameId as FrameId];
-  if (!layout) {
-    return null;
-  }
+  if (!layout) return null;
 
-  const handleDownload = async () => {
-    if (selectedImagesForFrame.length !== 4) return;
+  // PNG 다운로드
+  const handleDownloadPng = async () => {
+    if (selectedPhotosForFrame.length !== 4) return;
     if (!canvasRef.current) return;
 
-    setIsDownloading(true);
+    setIsDownloadingImage(true);
     try {
       const images = await Promise.all(
-        selectedImagesForFrame.map(
+        selectedPhotosForFrame.map(
           (src) =>
             new Promise<HTMLImageElement>((resolve, reject) => {
               const img = new Image();
@@ -119,14 +155,184 @@ export default function ResultPage() {
       console.error(e);
       alert("이미지 생성 중 오류가 발생했어요. 다시 시도해 주세요.");
     } finally {
-      setIsDownloading(false);
-      router.replace("/");
+      setIsDownloadingImage(false);
     }
+  };
+
+  // 프레임 안에 4개 영상이 동시에 들어간 하나의 영상 만들기
+  const handleDownloadVideo = async () => {
+    if (!hasAllVideos) {
+      alert("선택된 4개의 샷에 모두 영상이 있어야 합니다.");
+      return;
+    }
+    if (!canvasRef.current) return;
+
+    setIsDownloadingVideo(true);
+    try {
+      const { totalWidth, totalHeight, slots } = layout;
+      const canvas = canvasRef.current;
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+
+      canvas.width = totalWidth;
+      canvas.height = totalHeight;
+
+      // 선택된 4개의 샷 가져오기
+      const shotItems = selectedIndexes.map((idx) =>
+        idx == null ? null : shots[idx] ?? null
+      );
+
+      // 각 슬롯용 <video> 준비 (blob URL 사용)
+      const videos = await Promise.all(
+        shotItems.map(
+          (shot, i) =>
+            new Promise<HTMLVideoElement>((resolve, reject) => {
+              if (!shot?.video) {
+                return reject(
+                  new Error(`slot ${i} has no video, but hasAllVideos=true?`)
+                );
+              }
+              const v = document.createElement("video");
+              v.src = shot.video;
+              v.loop = true;
+              v.muted = true;
+              v.playsInline = true;
+              v.crossOrigin = "anonymous";
+
+              const onLoaded = () => {
+                v.removeEventListener("loadedmetadata", onLoaded);
+                resolve(v);
+              };
+              const onError = () => {
+                v.removeEventListener("error", onError);
+                reject(
+                  new Error(
+                    `video load error (slot ${i}): ${
+                      v.error?.message ?? "unknown error"
+                    }`
+                  )
+                );
+              };
+
+              v.addEventListener("loadedmetadata", onLoaded);
+              v.addEventListener("error", onError);
+            })
+        )
+      );
+
+      // 재생 길이(초) 결정
+      const duration = targetDuration;
+
+      // 모두 처음부터 시작
+      videos.forEach((v) => {
+        v.currentTime = 0;
+        v.loop = true;
+      });
+
+      // canvas 스트림 캡처해서 MediaRecorder로 녹화
+      const fps = 30;
+      const stream = canvas.captureStream(fps);
+      const recorder = new MediaRecorder(stream, {
+        mimeType: "video/webm;codecs=vp9",
+      });
+
+      const chunks: BlobPart[] = [];
+      recorder.ondataavailable = (e) => {
+        if (e.data && e.data.size > 0) chunks.push(e.data);
+      };
+
+      const frameName = frameConfig?.name ?? "recorday";
+
+      const stopped = new Promise<void>((resolve) => {
+        recorder.onstop = () => {
+          const blob = new Blob(chunks, { type: "video/webm" });
+          const url = URL.createObjectURL(blob);
+          const a = document.createElement("a");
+          a.href = url;
+          a.download = `${frameName.replace(/\s+/g, "_")}-${Date.now()}.webm`;
+          document.body.appendChild(a);
+          a.click();
+          document.body.removeChild(a);
+          URL.revokeObjectURL(url);
+          resolve();
+        };
+      });
+
+      recorder.start();
+
+      // 비디오들 재생 시작
+      await Promise.all(
+        videos.map((v) =>
+          v
+            .play()
+            .catch((err) =>
+              console.warn(
+                "video play error (user gesture 필요할 수 있음):",
+                err
+              )
+            )
+        )
+      );
+
+      const start = performance.now();
+
+      const renderFrame = () => {
+        const elapsed = (performance.now() - start) / 1000;
+        if (elapsed >= duration) {
+          recorder.stop();
+          videos.forEach((v) => v.pause());
+          return;
+        }
+
+        // 배경(테두리 색) 칠하기
+        ctx.fillStyle = borderColor;
+        ctx.fillRect(0, 0, totalWidth, totalHeight);
+
+        // 각 슬롯에 해당 비디오 프레임 그리기
+        slots.forEach((slot, index) => {
+          const v = videos[index];
+          if (!v || v.readyState < 2) return;
+
+          const { x, y, width, height } = slot;
+          const vw = v.videoWidth || 1;
+          const vh = v.videoHeight || 1;
+          const scale = Math.max(width / vw, height / vh);
+          const sw = vw * scale;
+          const sh = vh * scale;
+          const dx = x + (width - sw) / 2;
+          const dy = y + (height - sh) / 2;
+
+          ctx.save();
+          ctx.beginPath();
+          ctx.rect(x, y, width, height);
+          ctx.clip();
+          ctx.drawImage(v, dx, dy, sw, sh);
+          ctx.restore();
+        });
+
+        requestAnimationFrame(renderFrame);
+      };
+
+      renderFrame();
+
+      // duration 지난 뒤 자동 stop → onstop에서 다운로드
+      await stopped;
+    } catch (e) {
+      console.error(e);
+      alert("영상 합성 중 오류가 발생했어요. 다시 시도해 주세요.");
+    } finally {
+      setIsDownloadingVideo(false);
+    }
+  };
+
+  const handleGoHome = () => {
+    router.push("/home");
   };
 
   return (
     <main className="min-h-dvh bg-zinc-950 text-white px-4 py-6">
       <div className="mx-auto flex w-full max-w-md flex-col gap-5">
+        {/* 헤더 */}
         <header className="flex items-center justify-between">
           <div className="flex flex-col">
             <span className="text-[11px] tracking-[0.16em] text-zinc-500">
@@ -146,27 +352,37 @@ export default function ResultPage() {
           </div>
         </header>
 
+        {/* 미리보기 */}
         <section className="flex flex-col gap-3">
           <h2 className="text-xs font-medium text-zinc-300">
-            완성된 인생네컷 미리보기
+            사진 + 영상 미리보기
           </h2>
 
-          <div className="flex justify-center h-[330px]">
+          <div className="flex h-[330px] justify-center">
             <FramePreview
               variant={frameId as FrameId}
-              images={selectedImagesForFrame}
-              className=" bg-transparent border-none p-0"
+              media={slotMedia}
+              className="bg-transparent border-none p-0"
               borderColor={borderColor}
             />
           </div>
 
-          {frameConfig && (
-            <p className="text-[10px] text-zinc-500 text-center">
-              테두리 색을 바꿔보고 마음에 드는 조합을 골라보세요.
-            </p>
-          )}
+          <div className="flex h-[330px] justify-center">
+            <FramePreview
+              variant={frameId as FrameId}
+              images={selectedPhotosForFrame}
+              className="bg-transparent border-none p-0"
+              borderColor={borderColor}
+            />
+          </div>
+
+          <p className="text-[10px] text-zinc-500 text-center">
+            위 프레임 구성으로 PNG / 영상이 생성돼요. 테두리 색은 둘 다에
+            반영됩니다.
+          </p>
         </section>
 
+        {/* 테두리 색 선택 */}
         <section className="flex flex-col gap-2">
           <h3 className="text-xs font-medium text-zinc-300">테두리 색 선택</h3>
           <div className="flex flex-wrap gap-2">
@@ -195,16 +411,34 @@ export default function ResultPage() {
           </div>
         </section>
 
-        <section className="mt-2 flex justify-end">
+        <section className="mt-4 flex flex-wrap justify-end gap-2">
+          {/* 사진다운로드 */}
           <button
             type="button"
-            onClick={handleDownload}
-            disabled={isDownloading || selectedIndexes.length !== 4}
+            onClick={handleDownloadPng}
+            disabled={isDownloadingImage || selectedCount !== 4}
             className="rounded-full bg-emerald-500 px-4 py-2 text-xs font-semibold text-zinc-950 hover:bg-emerald-400 disabled:opacity-40 disabled:cursor-not-allowed"
           >
-            {isDownloading
-              ? "이미지 생성 중..."
-              : "PNG로 다운로드 후 메인 화면으로 돌아가기"}
+            {isDownloadingImage ? "이미지 생성 중..." : "사진 다운로드 (PNG)"}
+          </button>
+
+          {/* 동영상 다운로드 */}
+          <button
+            type="button"
+            onClick={handleDownloadVideo}
+            disabled={isDownloadingVideo || !hasAllVideos}
+            className="rounded-full bg-zinc-700 px-4 py-2 text-xs font-semibold text-white hover:bg-zinc-600 disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {isDownloadingVideo ? "영상 생성 중..." : "동영상 다운로드"}
+          </button>
+
+          {/* 홈으로 돌아가기 */}
+          <button
+            type="button"
+            onClick={handleGoHome}
+            className="rounded-full bg-zinc-800 px-4 py-2 text-xs font-semibold text-zinc-100 hover:bg-zinc-700"
+          >
+            홈으로 돌아가기
           </button>
         </section>
 

@@ -1,138 +1,24 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
 import Link from "next/link";
-import { useRouter } from "next/navigation";
-import { useShootSession } from "@/lib/shootSessionStore";
-
-const MAX_SHOTS = 8;
-const MAX_COUNT = 10;
+import { useCaptureFlow } from "./_hooks/useCaptureFlow";
 
 export default function CapturePage() {
-  const router = useRouter();
-  const { frameId, addShot, resetShots, shots } = useShootSession();
-
-  const [isCameraReady, setIsCameraReady] = useState(false);
-  const [isShooting, setIsShooting] = useState(false);
-  const [countdown, setCountdown] = useState<number | null>(null);
-
-  const videoRef = useRef<HTMLVideoElement | null>(null);
-  const canvasRef = useRef<HTMLCanvasElement | null>(null);
-  const streamRef = useRef<MediaStream | null>(null);
-  const shutterAudioRef = useRef<HTMLAudioElement | null>(null);
-
-  const remainingShots = Math.max(0, MAX_SHOTS - shots.length);
-
-  useEffect(() => {
-    if (!frameId) {
-      router.replace("/shoot");
-    }
-  }, [frameId, router]);
-
-  const startCamera = async () => {
-    try {
-      if (!navigator.mediaDevices?.getUserMedia) {
-        alert("이 브라우저에서는 카메라 사용을 지원하지 않아요.");
-        return;
-      }
-
-      const stream = await navigator.mediaDevices.getUserMedia({
-        video: { facingMode: "user" },
-        audio: false,
-      });
-      streamRef.current = stream;
-      if (videoRef.current) {
-        videoRef.current.srcObject = stream;
-      }
-      setIsCameraReady(true);
-    } catch (err) {
-      console.error(err);
-      alert("카메라 접근이 거부되었거나 오류가 발생했어요.");
-    }
-  };
-
-  useEffect(() => {
-    return () => {
-      if (streamRef.current) {
-        streamRef.current.getTracks().forEach((t) => t.stop());
-      }
-    };
-  }, []);
-
-  const playShutterSound = () => {
-    const audio = shutterAudioRef.current;
-    if (!audio) return;
-    audio.currentTime = 0;
-    audio.play().catch(() => {});
-  };
-
-  const capturePhoto = useCallback(() => {
-    if (!videoRef.current || !canvasRef.current) return;
-    const video = videoRef.current;
-    const canvas = canvasRef.current;
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-
-    const width = video.videoWidth || 480;
-    const height = video.videoHeight || 640;
-    canvas.width = width;
-    canvas.height = height;
-
-    ctx.save();
-    ctx.translate(width, 0);
-    ctx.scale(-1, 1);
-    ctx.drawImage(video, 0, 0, width, height);
-    ctx.restore();
-
-    const dataUrl = canvas.toDataURL("image/jpeg", 0.92);
-    addShot(dataUrl);
-
-    playShutterSound();
-  }, [addShot]);
-
-  const finishOrContinue = useCallback(() => {
-    const taken = shots.length + 1;
-
-    if (taken >= MAX_SHOTS) {
-      setIsShooting(false);
-      setCountdown(null);
-      router.push("/shoot/select");
-    } else {
-      setCountdown(MAX_COUNT);
-    }
-  }, [shots.length, router]);
-
-  const startShooting = () => {
-    if (!isCameraReady) {
-      alert("먼저 카메라를 켜주세요.");
-      return;
-    }
-    resetShots();
-    setIsShooting(true);
-    setCountdown(MAX_COUNT);
-  };
-
-  useEffect(() => {
-    if (!isShooting) return;
-    if (countdown === null) return;
-
-    const timer = window.setTimeout(() => {
-      if (countdown <= 1) {
-        capturePhoto();
-        finishOrContinue();
-      } else {
-        setCountdown(countdown - 1);
-      }
-    }, 1000);
-
-    return () => window.clearTimeout(timer);
-  }, [isShooting, countdown, capturePhoto, finishOrContinue]);
-
-  const handleShootNow = () => {
-    if (!isShooting || !isCameraReady) return;
-    capturePhoto();
-    finishOrContinue();
-  };
+  const {
+    videoRef,
+    canvasRef,
+    shutterAudioRef,
+    isCameraReady,
+    isShooting,
+    countdown,
+    shotCount,
+    remainingShots,
+    startCamera,
+    startShooting,
+    handleShootNow,
+    MAX_SHOTS,
+    MAX_COUNT,
+  } = useCaptureFlow();
 
   return (
     <main className="min-h-dvh bg-zinc-950 text-white px-4 py-6">
@@ -164,7 +50,7 @@ export default function CapturePage() {
           <div className="flex items-center justify-between text-[11px] text-zinc-400">
             <span>2단계 · 카메라 촬영 {isShooting && "· 자동 촬영 중"}</span>
             <span className="rounded-full border border-zinc-700 px-2 py-0.5">
-              {shots.length} / {MAX_SHOTS}장 촬영됨
+              {shotCount} / {MAX_SHOTS}장 촬영됨
             </span>
           </div>
 
@@ -209,7 +95,8 @@ export default function CapturePage() {
                     &quot;{MAX_SHOTS}장 자동 촬영 시작&quot;
                   </span>{" "}
                   버튼을 누르면
-                  <br />${MAX_COUNT}초 간격으로 사진을 촬영해요.
+                  <br />
+                  {MAX_COUNT}초 간격으로 사진과 영상을 함께 촬영해요.
                 </p>
               </div>
             )}
