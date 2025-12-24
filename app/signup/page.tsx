@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { AuthField } from "@/components/auth/AuthField";
@@ -18,6 +18,7 @@ type SignupErrors = {
   passwordConfirm?: string | null;
   nickname?: string | null;
   common?: string | null;
+  emailCode?: string | null;
 };
 
 const signupFields = [
@@ -57,8 +58,106 @@ const signupFields = [
 
 export default function SignupPage() {
   const router = useRouter();
+  const formRef = useRef<HTMLFormElement | null>(null);
+
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState<SignupErrors>({});
+
+  // 이메일 인증 관련
+  const [isSendingCode, setIsSendingCode] = useState(false);
+  const [isVerifyingCode, setIsVerifyingCode] = useState(false);
+  const [emailCode, setEmailCode] = useState("");
+  const [isEmailVerified, setIsEmailVerified] = useState(false);
+  const [verifiedEmail, setVerifiedEmail] = useState<string | null>(null);
+
+  const isBusy = isSubmitting || isSendingCode || isVerifyingCode;
+
+  const getEmailFromForm = () => {
+    const form = formRef.current;
+    if (!form) return "";
+    const fd = new FormData(form);
+    return String(fd.get("email") || "").trim();
+  };
+
+  const handleSendCode = async () => {
+    setErrors((prev) => ({
+      ...prev,
+      email: null,
+      emailCode: null,
+      common: null,
+    }));
+
+    const email = getEmailFromForm();
+    const emailError = validateEmail(email);
+    if (emailError) {
+      setErrors((prev) => ({ ...prev, email: emailError }));
+      return;
+    }
+
+    // 이메일을 바꾸고 다시 인증하려는 경우를 대비해 인증 상태 초기화
+    setIsEmailVerified(false);
+    setVerifiedEmail(null);
+
+    setIsSendingCode(true);
+    try {
+      await api.post("/api/email-auth/code", { email });
+      alert("인증 코드가 이메일로 전송되었습니다.");
+    } catch (error) {
+      console.error(error);
+      setErrors((prev) => ({
+        ...prev,
+        common: "인증 코드 전송에 실패했습니다. 잠시 후 다시 시도해 주세요.",
+      }));
+    } finally {
+      setIsSendingCode(false);
+    }
+  };
+
+  const handleVerifyCode = async () => {
+    setErrors((prev) => ({
+      ...prev,
+      email: null,
+      emailCode: null,
+      common: null,
+    }));
+
+    const email = getEmailFromForm();
+    const emailError = validateEmail(email);
+    if (emailError) {
+      setErrors((prev) => ({ ...prev, email: emailError }));
+      return;
+    }
+
+    if (!emailCode.trim()) {
+      setErrors((prev) => ({
+        ...prev,
+        emailCode: "인증 코드를 입력해 주세요.",
+      }));
+      return;
+    }
+
+    setIsVerifyingCode(true);
+    try {
+      await api.post("/api/email-auth/verification", {
+        email,
+        code: emailCode.trim(),
+      });
+
+      setIsEmailVerified(true);
+      setVerifiedEmail(email);
+      alert("이메일 인증이 완료되었습니다.");
+    } catch (error) {
+      console.error(error);
+      setIsEmailVerified(false);
+      setVerifiedEmail(null);
+      setErrors((prev) => ({
+        ...prev,
+        emailCode: "인증 코드가 올바르지 않습니다.",
+      }));
+    } finally {
+      setIsVerifyingCode(false);
+    }
+  };
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -66,10 +165,10 @@ export default function SignupPage() {
     setErrors({});
 
     const formData = new FormData(e.currentTarget);
-    const email = String(formData.get("email") || "");
+    const email = String(formData.get("email") || "").trim();
     const password = String(formData.get("password") || "");
     const passwordConfirm = String(formData.get("passwordConfirm") || "");
-    const nickname = String(formData.get("nickname") || "");
+    const nickname = String(formData.get("nickname") || "").trim();
 
     const newErrors: SignupErrors = {};
 
@@ -85,6 +184,10 @@ export default function SignupPage() {
 
     const nicknameError = validateNickname(nickname);
     if (nicknameError) newErrors.nickname = nicknameError;
+
+    if (!isEmailVerified || !verifiedEmail || verifiedEmail !== email) {
+      newErrors.email = "이메일 인증을 완료해 주세요.";
+    }
 
     if (Object.keys(newErrors).length > 0) {
       setErrors(newErrors);
@@ -103,10 +206,9 @@ export default function SignupPage() {
       router.push("/login");
     } catch (error) {
       console.error(error);
-
-      const msg = "회원가입에 실패했습니다. 잠시 후 다시 시도해 주세요.";
-
-      setErrors({ common: msg });
+      setErrors({
+        common: "회원가입에 실패했습니다. 잠시 후 다시 시도해 주세요.",
+      });
     } finally {
       setIsSubmitting(false);
     }
@@ -134,6 +236,7 @@ export default function SignupPage() {
 
         {/* 이메일 회원가입 폼 */}
         <form
+          ref={formRef}
           onSubmit={handleSubmit}
           className="flex flex-col gap-4 rounded-2xl border border-zinc-800 bg-zinc-900/60 p-4"
         >
@@ -151,13 +254,61 @@ export default function SignupPage() {
             />
           ))}
 
+          <div className="mt-1 flex flex-col gap-2">
+            <div className="flex items-center gap-2">
+              <button
+                type="button"
+                onClick={handleSendCode}
+                disabled={isBusy}
+                className="inline-flex h-9 flex-1 items-center justify-center rounded-full border border-zinc-700 bg-zinc-900/40 text-[11px] font-semibold text-zinc-100 hover:bg-zinc-800 disabled:opacity-50"
+              >
+                {isSendingCode ? "전송 중..." : "인증 코드 발송"}
+              </button>
+
+              {isEmailVerified && (
+                <span className="inline-flex h-9 items-center rounded-full bg-emerald-500/10 px-3 text-[11px] font-semibold text-emerald-300">
+                  인증 완료
+                </span>
+              )}
+            </div>
+
+            <div className="flex gap-2">
+              <input
+                type="text"
+                value={emailCode}
+                onChange={(e) => setEmailCode(e.target.value)}
+                placeholder="인증 코드 입력"
+                disabled={isEmailVerified}
+                className="h-9 flex-1 rounded-xl border border-zinc-800 bg-zinc-950/40 px-3 text-[11px] text-zinc-100 outline-none placeholder:text-zinc-600 disabled:opacity-60"
+              />
+
+              <button
+                type="button"
+                onClick={handleVerifyCode}
+                disabled={isBusy || isEmailVerified || !emailCode.trim()}
+                className="inline-flex h-9 items-center justify-center rounded-xl bg-emerald-500 px-3 text-[11px] font-semibold text-zinc-950 hover:bg-emerald-400 disabled:opacity-50"
+              >
+                {isVerifyingCode ? "확인 중..." : "인증하기"}
+              </button>
+            </div>
+
+            {errors.emailCode && (
+              <p className="text-[10px] text-red-400">{errors.emailCode}</p>
+            )}
+
+            <p className="text-[10px] text-zinc-500">
+              인증 코드를 발송한 뒤, 메일로 받은 코드를 입력하고 인증을 완료해
+              주세요.
+            </p>
+          </div>
+
           {errors.common && (
             <p className="text-[10px] text-red-400">{errors.common}</p>
           )}
 
           <button
             type="submit"
-            disabled={isSubmitting}
+            disabled={isSubmitting || !isEmailVerified}
             className="mt-1 inline-flex h-9 items-center justify-center rounded-full bg-emerald-500 text-[11px] font-semibold text-zinc-950 hover:bg-emerald-400 disabled:opacity-50"
           >
             {isSubmitting ? "가입 중..." : "이메일로 회원가입"}
