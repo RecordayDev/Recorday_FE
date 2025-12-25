@@ -10,7 +10,7 @@ type Props = {
   description?: ReactNode;
 
   // 오른쪽: 링크 or 커스텀 액션
-  backHref: string;
+  backHref?: string;
   backLabel?: string;
   rightSlot?: string;
 
@@ -20,7 +20,7 @@ type Props = {
 export function PageHeader({
   title,
   description,
-  backHref,
+  backHref = "",
   backLabel,
   rightSlot,
   showBrand = true,

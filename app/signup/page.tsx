@@ -19,7 +19,7 @@ import {
 } from "@/lib/authValidation";
 import { signupWithEmail } from "@/lib/auth/authApi";
 import { useEmailVerification } from "./_hooks/useEmailVerification";
-import { EmailVerificationSection } from "@/components/auth/EmailVerificationSection";
+import { EmailCodeSection } from "@/components/auth/EmailCodeSection";
 
 type SignupFieldName = Extract<
   AuthFieldName,
@@ -35,6 +35,7 @@ export default function SignupPage() {
 
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errors, setErrors] = useState<SignupErrors>({});
+  const [email, setEmail] = useState("");
 
   const emailVerification = useEmailVerification();
 
@@ -52,8 +53,8 @@ export default function SignupPage() {
 
     const formData = new FormData(e.currentTarget);
 
-    const emailFromForm = String(formData.get("email") || "").trim();
-    const email = (emailVerification.verifiedEmail ?? emailFromForm).trim();
+    const emailFromState = email.trim();
+    const verifiedEmail = (emailVerification.verifiedEmail ?? "").trim();
 
     const password = String(formData.get("password") || "");
     const confirmPassword = String(formData.get("confirmPassword") || "");
@@ -78,9 +79,7 @@ export default function SignupPage() {
 
     if (!emailVerification.isEmailVerified) {
       nextErrors.email = "이메일 인증을 완료해 주세요.";
-    } else if (
-      (emailVerification.verifiedEmail ?? "").trim() !== emailFromForm
-    ) {
+    } else if (verifiedEmail !== emailFromState) {
       nextErrors.email = "인증한 이메일과 입력한 이메일이 달라요.";
     }
 
@@ -91,7 +90,11 @@ export default function SignupPage() {
     }
 
     try {
-      await signupWithEmail({ email, password, username: username });
+      await signupWithEmail({
+        email: verifiedEmail || emailFromState,
+        password,
+        username,
+      });
       router.push("/login");
     } catch (error) {
       console.error(error);
@@ -129,18 +132,20 @@ export default function SignupPage() {
           </p>
         ) : null}
 
-        <EmailVerificationSection
+        <EmailCodeSection
+          email={email}
+          setEmail={setEmail}
+          code={emailVerification.emailCode}
+          setCode={emailVerification.setEmailCode}
           emailLocked={emailLocked}
-          emailError={errors.email}
-          emailCode={emailVerification.emailCode}
-          setEmailCode={emailVerification.setEmailCode}
-          isSendingCode={emailVerification.isSendingCode}
-          isVerifyingCode={emailVerification.isVerifyingCode}
-          isEmailVerified={emailVerification.isEmailVerified}
-          emailVerificationEmailError={emailVerification.emailError}
+          isSending={emailVerification.isSendingCode}
+          isVerifying={emailVerification.isVerifyingCode}
+          isVerified={emailVerification.isEmailVerified}
+          emailError={errors.email ?? emailVerification.emailError}
           codeError={emailVerification.codeError}
-          sendCode={emailVerification.sendCode}
-          verifyCode={emailVerification.verifyCode}
+          onSend={emailVerification.sendCode}
+          onVerify={emailVerification.verifyCode}
+          verifiedText="이메일 인증 완료!"
         />
 
         {/* 비밀번호 */}

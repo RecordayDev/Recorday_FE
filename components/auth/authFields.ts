@@ -32,8 +32,8 @@ export const LOGIN_FIELDS: AuthFieldConfig[] = [
   },
 ];
 
-export const SIGNUP_EMAIL_FIELD: AuthFieldConfig = {
-  id: "signup-email",
+export const EMAIL_FIELD: AuthFieldConfig = {
+  id: "email",
   name: "email",
   type: "email",
   label: "이메일",
