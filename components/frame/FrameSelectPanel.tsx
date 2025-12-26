@@ -67,7 +67,7 @@ export function FrameSelectPanel({
             선택한 프레임 미리보기
           </h2>
           <div className="flex h-[330px] justify-center">
-            <FramePreview variant={frameId} media={slotMedia} />
+            <FramePreview frameId={frameId} media={slotMedia} />
           </div>
           <p className="text-center text-[10px] text-zinc-500">
             아래에서 사진을 고르면, 위 프레임에 선택 순서대로 채워져요.

@@ -40,7 +40,7 @@ export function FramePicker({
                   {frame.name}
                 </span>
                 <div className="flex h-[200px] w-full items-center justify-center">
-                  <FramePreview variant={frame.id} className="" />
+                  <FramePreview frameId={frame.id} className="" />
                 </div>
               </button>
             );

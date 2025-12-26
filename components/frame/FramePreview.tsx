@@ -7,7 +7,7 @@ export type FrameMedia = {
 };
 
 type FramePreviewProps = {
-  variant: FrameId;
+  frameId: FrameId;
   // selected?: boolean;
   className?: string;
   media?: (FrameMedia | null)[];
@@ -16,14 +16,14 @@ type FramePreviewProps = {
 };
 
 export function FramePreview({
-  variant,
+  frameId,
   // selected,
   className = "",
   media,
   images,
   borderColor,
 }: FramePreviewProps) {
-  const layout = FRAME_LAYOUTS[variant];
+  const layout = FRAME_LAYOUTS[frameId];
 
   if (!layout) return null;
   const { totalWidth, totalHeight, slots, full } = layout;
