@@ -14,7 +14,7 @@ import {
   recordFrameWebm,
   type FrameSource,
 } from "@/lib/canvas/composeFrame";
-import { isNotNull } from "@/lib/types/guards";
+import { isNotNull } from "@/lib/guards";
 
 const MAX_SECONDS = 8;
 
