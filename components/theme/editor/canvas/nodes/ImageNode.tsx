@@ -1,0 +1,42 @@
+"use client";
+
+import { Group, Image as KonvaImage, Rect } from "react-konva";
+import useImage from "use-image";
+import type { GroupConfig } from "konva/lib/Group";
+import type Konva from "konva";
+import type { EditorComponent } from "@/lib/types/themeEditor";
+import { useEffect } from "react";
+
+type Props = {
+  c: EditorComponent;
+  common: Partial<GroupConfig> & {
+    onClick: () => void;
+    onTap: () => void;
+    onDragEnd: (e: Konva.KonvaEventObject<DragEvent>) => void;
+  };
+  outline: React.ReactNode;
+  onAssetReady?: () => void;
+};
+
+export function ImageNode({ c, common, outline, onAssetReady }: Props) {
+  const [img, status] = useImage(c.source, "anonymous");
+
+  useEffect(() => {
+    if (status === "loaded") onAssetReady?.();
+  }, [status, onAssetReady]);
+
+  return (
+    <Group {...common}>
+      {outline}
+      <KonvaImage image={img ?? undefined} width={c.width} height={c.height} />
+      {!img && (
+        <Rect
+          width={c.width}
+          height={c.height}
+          fill="rgba(255,255,255,0.06)"
+          listening={false}
+        />
+      )}
+    </Group>
+  );
+}
