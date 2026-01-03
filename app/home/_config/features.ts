@@ -26,7 +26,6 @@ export const features: Feature[] = [
     title: "테마 꾸미기",
     description: "프레임, 스티커, 텍스트로 나만의 테마를 꾸밀 수 있어요.",
     href: "/theme",
-    comingSoon: true,
     icon: themeIcon,
   },
   {
@@ -34,6 +33,7 @@ export const features: Feature[] = [
     title: "사진 기록",
     description: "이 기기에서 만든 인생네컷을 1주일 동안 다시 볼 수 있어요.",
     href: "/history",
+    comingSoon: true,
     icon: historyIcon,
   },
 ];
