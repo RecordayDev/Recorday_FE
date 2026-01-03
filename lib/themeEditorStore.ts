@@ -1,0 +1,404 @@
+"use client";
+
+import { create } from "zustand";
+import type { FrameId } from "@/constants/frames";
+import { FRAME_LAYOUTS } from "@/constants/frameLayouts";
+import { STICKERS } from "@/constants/stickers.generated";
+import type {
+  Asset,
+  CommonStyleJson,
+  EditorComponent,
+  PhotoComponent,
+  StickerComponent,
+  TextComponent,
+  TextStyleJson,
+  ThemeExportJson,
+  ComponentType,
+} from "@/lib/types/themeEditor";
+
+const uid = (prefix = "front") => `${prefix}-${crypto.randomUUID()}`;
+
+function normalizeZ(components: EditorComponent[]): EditorComponent[] {
+  return components.map((c, i) => ({ ...c, zIndex: i + 1 }));
+}
+
+async function readImageSize(
+  src: string
+): Promise<{ w: number; h: number } | null> {
+  return new Promise((resolve) => {
+    const img = new Image();
+    img.onload = () =>
+      resolve({
+        w: img.naturalWidth || img.width,
+        h: img.naturalHeight || img.height,
+      });
+    img.onerror = () => resolve(null);
+    img.src = src;
+  });
+}
+
+type TextPatch = Partial<Omit<TextComponent, "id" | "type" | "zIndex">> & {
+  styleJson?: Partial<TextStyleJson>;
+};
+
+type ImagePatch = Partial<
+  Omit<PhotoComponent | StickerComponent, "id" | "type" | "zIndex">
+> & {
+  styleJson?: Partial<CommonStyleJson>;
+};
+
+type UpdatePatch = TextPatch | ImagePatch;
+
+type State = {
+  frameId: FrameId | null;
+  tab: ComponentType;
+
+  assets: {
+    photos: Asset[];
+    stickers: Asset[];
+  };
+
+  components: EditorComponent[];
+  activeId: string | null;
+
+  setFrameId: (id: FrameId) => void;
+  setTab: (t: ComponentType) => void;
+
+  addPhotoAssets: (files: FileList) => void;
+
+  removePhotoAsset: (assetId: string) => {
+    ok: boolean;
+    reason?: "IN_USE" | "NOT_FOUND";
+  };
+  resetPhotos: () => void;
+
+  addComponentFromAsset: (
+    type: "PHOTO" | "STICKER",
+    src: string
+  ) => Promise<void>;
+  addText: () => void;
+
+  setActive: (id: string | null) => void;
+  updateComponent: (id: string, patch: UpdatePatch) => void;
+
+  remove: (id: string) => void;
+  duplicate: (id: string) => void;
+
+  // bringToFront: (id: string) => void;
+  // sendToBack: (id: string) => void;
+  moveLayerUp: (id: string) => void;
+  moveLayerDown: (id: string) => void;
+
+  toggleHidden: (id: string) => void;
+  toggleLocked: (id: string) => void;
+
+  exportJson: () => ThemeExportJson | null;
+};
+
+export const useThemeEditorStore = create<State>((set, get) => ({
+  frameId: null,
+  tab: "PHOTO",
+
+  assets: {
+    photos: [],
+    stickers: STICKERS,
+  },
+
+  components: [],
+  activeId: null,
+
+  setFrameId: (id) => set({ frameId: id }),
+
+  setTab: (t) => set({ tab: t }),
+
+  addPhotoAssets: (files) => {
+    const list: Asset[] = Array.from(files).map((f) => ({
+      id: uid("asset"),
+      src: URL.createObjectURL(f),
+      name: f.name,
+    }));
+
+    set((s) => ({
+      assets: { ...s.assets, photos: [...list, ...s.assets.photos] },
+      tab: "PHOTO",
+    }));
+  },
+
+  removePhotoAsset: (assetId) => {
+    const state = get();
+    const asset = state.assets.photos.find((p) => p.id === assetId);
+    if (!asset) return { ok: false as const, reason: "NOT_FOUND" as const };
+
+    const inUse = state.components.some(
+      (c) => c.type === "PHOTO" && c.source === asset.src
+    );
+    if (inUse) return { ok: false as const, reason: "IN_USE" as const };
+
+    try {
+      URL.revokeObjectURL(asset.src);
+    } catch {}
+
+    set((s) => ({
+      assets: {
+        ...s.assets,
+        photos: s.assets.photos.filter((p) => p.id !== assetId),
+      },
+    }));
+
+    return { ok: true as const };
+  },
+
+  resetPhotos: () => {
+    const state = get();
+    for (const p of state.assets.photos) {
+      try {
+        URL.revokeObjectURL(p.src);
+      } catch {}
+    }
+    set((s) => ({
+      assets: { ...s.assets, photos: [] },
+    }));
+  },
+
+  addComponentFromAsset: async (type, src) => {
+    const { frameId } = get();
+    if (!frameId) return;
+
+    const layout = FRAME_LAYOUTS[frameId];
+    const baseX = layout.totalWidth / 2;
+    const baseY = layout.totalHeight / 2;
+
+    const id = uid(type === "PHOTO" ? "photo" : "sticker");
+
+    const draft: EditorComponent =
+      type === "PHOTO"
+        ? {
+            id,
+            type: "PHOTO",
+            source: src,
+            x: baseX,
+            y: baseY,
+            width: 700,
+            height: 500,
+            scale: 1,
+            rotation: 0,
+            zIndex: 0,
+            styleJson: { opacity: 1 },
+            locked: false,
+            hidden: false,
+          }
+        : {
+            id,
+            type: "STICKER",
+            source: src,
+            x: baseX,
+            y: baseY,
+            width: 600,
+            height: 600,
+            scale: 1,
+            rotation: 0,
+            zIndex: 0,
+            styleJson: { opacity: 1 },
+            locked: false,
+            hidden: false,
+          };
+
+    set((s) => ({
+      components: normalizeZ([...s.components, draft]),
+      activeId: id,
+    }));
+
+    const size = await readImageSize(src);
+    if (!size) return;
+
+    const maxW = 900;
+    const maxH = 900;
+    const ratio = size.w / size.h;
+
+    let w = Math.min(maxW, size.w);
+    let h = w / ratio;
+    if (h > maxH) {
+      h = maxH;
+      w = h * ratio;
+    }
+
+    get().updateComponent(id, { width: w, height: h });
+  },
+
+  addText: () => {
+    const { frameId } = get();
+    if (!frameId) return;
+
+    const layout = FRAME_LAYOUTS[frameId];
+    const id = uid("text");
+
+    const style: TextStyleJson = {
+      fontFamily: "Pretendard",
+      fontSize: 64,
+      color: "#ffffff",
+      textAlign: "center",
+      opacity: 1,
+    };
+
+    const c: TextComponent = {
+      id,
+      type: "TEXT",
+      source: "Happy Day",
+      x: layout.totalWidth / 2,
+      y: 300,
+      width: 1200,
+      height: 140,
+      scale: 1,
+      rotation: 0,
+      zIndex: 0,
+      styleJson: style,
+      locked: false,
+      hidden: false,
+    };
+
+    set((s) => ({
+      components: normalizeZ([...s.components, c]),
+      activeId: id,
+      tab: "TEXT",
+    }));
+  },
+
+  setActive: (id) => set({ activeId: id }),
+
+  updateComponent: (id, patch) => {
+    set((s) => ({
+      components: s.components.map((c) => {
+        if (c.id !== id) return c;
+
+        if (c.type === "TEXT") {
+          const p = patch as TextPatch;
+          const nextStyle = p.styleJson
+            ? { ...c.styleJson, ...p.styleJson }
+            : c.styleJson;
+
+          return { ...c, ...p, zIndex: c.zIndex, styleJson: nextStyle };
+        }
+
+        // PHOTO / STICKER
+        const p = patch as ImagePatch;
+        const current = (c.styleJson ?? {}) as CommonStyleJson;
+        const nextStyle = p.styleJson
+          ? { ...current, ...p.styleJson }
+          : current;
+
+        return { ...c, ...p, zIndex: c.zIndex, styleJson: nextStyle };
+      }),
+    }));
+  },
+
+  remove: (id) => {
+    set((s) => ({
+      components: normalizeZ(s.components.filter((c) => c.id !== id)),
+      activeId: s.activeId === id ? null : s.activeId,
+    }));
+  },
+
+  duplicate: (id) => {
+    const src = get().components.find((c) => c.id === id);
+    if (!src) return;
+
+    const copy: EditorComponent = {
+      ...src,
+      id: uid("dup"),
+      x: src.x + 40,
+      y: src.y + 40,
+      zIndex: 0,
+    };
+
+    set((s) => ({
+      components: normalizeZ([...s.components, copy]),
+      activeId: copy.id,
+    }));
+  },
+
+  // bringToFront: (id) => {
+  //   set((s) => {
+  //     const idx = s.components.findIndex((c) => c.id === id);
+  //     if (idx < 0) return s;
+
+  //     const picked = s.components[idx];
+  //     const rest = s.components.filter((_, i) => i !== idx);
+  //     return { components: normalizeZ([...rest, picked]) };
+  //   });
+  // },
+
+  // sendToBack: (id) => {
+  //   set((s) => {
+  //     const idx = s.components.findIndex((c) => c.id === id);
+  //     if (idx < 0) return s;
+
+  //     const picked = s.components[idx];
+  //     const rest = s.components.filter((_, i) => i !== idx);
+  //     return { components: normalizeZ([picked, ...rest]) };
+  //   });
+  // },
+
+  moveLayerUp: (id) => {
+    set((s) => {
+      const idx = s.components.findIndex((c) => c.id === id);
+      if (idx < 0 || idx === s.components.length - 1) return s;
+
+      const next = [...s.components];
+      [next[idx], next[idx + 1]] = [next[idx + 1], next[idx]];
+      return { components: normalizeZ(next) };
+    });
+  },
+
+  moveLayerDown: (id) => {
+    set((s) => {
+      const idx = s.components.findIndex((c) => c.id === id);
+      if (idx <= 0) return s;
+
+      const next = [...s.components];
+      [next[idx], next[idx - 1]] = [next[idx - 1], next[idx]];
+      return { components: normalizeZ(next) };
+    });
+  },
+
+  toggleHidden: (id) => {
+    set((s) => ({
+      components: s.components.map((c) =>
+        c.id === id ? { ...c, hidden: !c.hidden } : c
+      ),
+    }));
+  },
+
+  toggleLocked: (id) => {
+    set((s) => ({
+      components: s.components.map((c) =>
+        c.id === id ? { ...c, locked: !c.locked } : c
+      ),
+    }));
+  },
+
+  exportJson: () => {
+    const { frameId, components } = get();
+    if (!frameId) return null;
+
+    const normalized = normalizeZ(components);
+
+    return {
+      frameId,
+      components: normalized
+        .filter((c) => !c.hidden)
+        .map((c) => ({
+          id: c.id,
+          type: c.type,
+          source: c.source,
+          x: c.x,
+          y: c.y,
+          width: c.width,
+          height: c.height,
+          scale: c.scale ?? 1,
+          rotation: c.rotation ?? 0,
+          zIndex: c.zIndex,
+          styleJson: (c.styleJson ?? {}) as Record<string, unknown>,
+        })),
+    };
+  },
+}));

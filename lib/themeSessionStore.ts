@@ -3,7 +3,7 @@ import type { FrameId } from "@/constants/frames";
 
 type ThemeSessionState = {
   frameId: FrameId | null;
-  setFrameId: (id: FrameId) => void;
+  setFrameId: (id: FrameId | null) => void;
   reset: () => void;
 };
 
